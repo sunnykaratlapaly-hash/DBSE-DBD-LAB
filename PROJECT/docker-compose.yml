@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  # 1. PostgreSQL 16 + pgvector Extension (Relational ACID & Clinical Semantic Search)
+  postgres-db:
+    image: pgvector/pgvector:pg16
+    container_name: dhms-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: hospital_db
+      POSTGRES_USER: dhms_admin
+      POSTGRES_PASSWORD: dhms_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init-postgres.sql:/docker-entrypoint-initdb.d/init-postgres.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dhms_admin -d hospital_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 2. MongoDB 7.0 (Document Store for Pathology & Analyzer Telemetry)
+  mongo-db:
+    image: mongo:7.0
+    container_name: dhms-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./database/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 3. Redis 7.2 (Distributed In-Memory Cache, JWT Sessions & Redlock Mutex)
+  redis-cache:
+    image: redis:7.2-alpine
+    container_name: dhms-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 4. Optional Web UI: pgAdmin (Visual PostgreSQL & pgvector Inspector)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: dhms-pgadmin
+    restart: unless-stopped
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@hospital.org
+      PGADMIN_DEFAULT_PASSWORD: admin_password
+    depends_on:
+      - postgres-db
+
+  # 5. Optional Web UI: Mongo Express (Visual MongoDB Document Inspector)
+  mongo-express:
+    image: mongo-express:latest
+    container_name: dhms-mongo-express
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongo-db
+      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: password
+    depends_on:
+      - mongo-db
+
+volumes:
+  postgres_data:
+  mongo_data:
+  redis_data:
